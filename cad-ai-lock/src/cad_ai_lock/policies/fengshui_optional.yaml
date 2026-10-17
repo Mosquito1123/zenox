@@ -1,0 +1,26 @@
+# 可选偏好包：风水类条目（默认关闭，用户显式开启）
+# 作为 preference，不覆盖消防/通行等硬常识
+id: fengshui_optional
+version: "1.0"
+enabled_by_default: false
+rules:
+  - id: bed_not_face_door
+    scope: bedroom
+    weight: 0.75
+    description: 床不宜正对房门
+    check: bed_not_face_door
+  - id: mirror_not_face_bed
+    scope: bedroom
+    weight: 0.55
+    description: 镜面不宜正对床铺
+    check: mirror_not_face_bed
+  - id: toilet_not_face_door
+    scope: bathroom
+    weight: 0.5
+    description: 马桶不宜正对卫生间门
+    check: toilet_not_face_door
+  - id: stove_not_face_sink
+    scope: kitchen
+    weight: 0.45
+    description: 灶台与水槽宜有过渡，避免正对
+    check: stove_not_face_sink

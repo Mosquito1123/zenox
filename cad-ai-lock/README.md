@@ -1,0 +1,103 @@
+# CAD AI Lock — 商用自动化装修流水线
+
+```
+CAD/PDF/JPG
+  → Extract (ink/Hough/LSD + OCR)
+  → Assess 拓扑健康度
+  → Repair 自动修正（正交/合并/网格/房间/比例尺/门窗）  ⟲ 直到通过或耗尽预算
+  → Layout 软策略（常识/采光/可选风水）
+  → Control 多控制图
+  → Generate t2i/i2i（ControlNet 硬锁）
+  → Validate 结构硬分
+       ↓ fail
+     加强 control strength 重试 ⟲
+  → run_report.json（全程审计，禁止静默手改）
+```
+
+**商用主路径不接受手改 `plan.json`。** `--plan-override` 仅供运维兜底。
+
+## 两层锁定 + 自动修正
+
+| 层 | 内容 | 失败时 |
+|----|------|--------|
+| 硬锁 | 墙门窗、控制图、禁止改户型提示词 | validate fail → 加强 strength 重生成 |
+| 软约束 | 布局模板、走道净空、采光、可选风水 | 打分；过低则 rebuild_layout |
+| 拓扑 | assess 墙段数/正交/连通/房间/比例尺 | repair 动作表自动修 |
+
+## 安装
+
+```bash
+cd cad-ai-lock
+python -m venv .venv && source .venv/bin/activate
+pip install -e .
+pip install easyocr   # 可选：尺寸标注 / 中文房间名 OCR
+cp .env.example .env
+```
+
+## CLI
+
+```bash
+# 商用一键（自动修正闭环）
+python -m cad_ai_lock.cli pipeline path/to/floorplan.png \
+  -p "现代简约装修" --provider mock -w out/run --ocr
+
+# 分步
+python -m cad_ai_lock.cli extract floorplan.png -o plan.json --control out/control
+python -m cad_ai_lock.cli assess plan.json
+python -m cad_ai_lock.cli repair plan.json -i floorplan.png -o plan.fixed.json
+python -m cad_ai_lock.cli layout --plan plan.json -o layout.json --control out/control
+python -m cad_ai_lock.cli t2i --plan plan.json --layout layout.json -p "现代简约" -o out/t2i.png
+python -m cad_ai_lock.cli validate out/t2i.png --plan plan.json --layout layout.json
+```
+
+## 自动修正动作表
+
+| 动作 | 触发 |
+|------|------|
+| `orthogonal_snap` | 非正交墙过多 |
+| `merge_collinear` / `dedupe_walls` | 碎线/重复墙 |
+| `grid_snap` / `snap_junctions` | 端点不闭合 |
+| `infer_rooms` / `label_rooms` | 无房间或无名 |
+| `estimate_scale` | 无比例尺（OCR mm） |
+| `infer_openings` / `attach_openings` | 门窗缺失/游离 |
+| `re_extract_walls` | 包络异常 → 整段重提 |
+| `rebuild_layout` | 布局软分过低 |
+| `t2i_retry_strengthen_*` | 生成结构校验失败 |
+
+全程写入 `meta.repair_log` 与 `run_report.json`。
+
+## 环境变量
+
+| 变量 | 说明 |
+|------|------|
+| `CAD_AI_PROVIDER` | `mock` / `replicate` / `fal` / `local` |
+| `REPLICATE_API_TOKEN` / `FAL_KEY` / `OPENAI_API_KEY` | 后端 Key |
+| `CONTROL_STRENGTH` | 默认 `0.85` |
+| `POLICY_*` / `STRUCTURE_THRESHOLD` / `POLICY_THRESHOLD` | 策略与校验 |
+
+## 目录
+
+```
+src/cad_ai_lock/
+  extract.py      hybrid ink + Hough + LSD + OCR
+  assess.py       拓扑健康度
+  repair.py       自动修正动作
+  ocr_utils.py    EasyOCR（可选）
+  pipeline.py     商用闭环编排
+  layout.py       软布局
+  control.py      多控制图
+  generate.py     mock / replicate / fal / local
+  validate.py     结构硬校验
+  cli.py
+```
+
+## 注意
+
+- OCR 为可选依赖；无 EasyOCR 时仍可跑 CV 提取 + 纹理房间分类，比例尺可 `--scale` 传入。
+- mock 只验证闭环与控制图锁定；上线请接真实 ControlNet（Replicate/FAL/local）。
+- VR/透视静帧由 `CameraSpec` + 生成端一点透视 prompt 产出，不是全景 360。
+- 风水包默认关闭，不覆盖消防/通行常识。
+
+## License
+
+MIT

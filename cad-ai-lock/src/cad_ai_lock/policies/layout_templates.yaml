@@ -1,0 +1,50 @@
+# 常用房间布置模板（在房间多边形内放家具锚点）
+id: layout_templates
+version: "1.0"
+enabled_by_default: true
+templates:
+  living_small:
+    match_room_names: ["客厅", "起居", "living", "Living"]
+    items:
+      - type: sofa
+        relative: { u: 0.5, v: 0.72 }
+        size_m: [2.1, 0.9]
+        face: toward_window_or_center
+      - type: coffee_table
+        relative: { u: 0.5, v: 0.55 }
+        size_m: [1.0, 0.55]
+        face: none
+      - type: tv_console
+        relative: { u: 0.5, v: 0.18 }
+        size_m: [1.6, 0.4]
+        face: into_room
+      - type: floor_lamp
+        relative: { u: 0.82, v: 0.68 }
+        size_m: [0.35, 0.35]
+        face: none
+  bedroom_default:
+    match_room_names: ["卧室", "主卧", "次卧", "bedroom", "Bedroom"]
+    items:
+      - type: bed
+        relative: { u: 0.5, v: 0.35 }
+        size_m: [1.5, 2.0]
+        face: head_to_nearest_solid_wall
+      - type: nightstand
+        relative: { u: 0.22, v: 0.35 }
+        size_m: [0.45, 0.4]
+        face: none
+      - type: wardrobe
+        relative: { u: 0.85, v: 0.55 }
+        size_m: [1.2, 0.55]
+        face: into_room
+  dining_default:
+    match_room_names: ["餐厅", "dining", "Dining"]
+    items:
+      - type: dining_table
+        relative: { u: 0.5, v: 0.5 }
+        size_m: [1.4, 0.8]
+        face: none
+      - type: dining_chair
+        relative: { u: 0.5, v: 0.32 }
+        size_m: [0.45, 0.45]
+        face: toward_table

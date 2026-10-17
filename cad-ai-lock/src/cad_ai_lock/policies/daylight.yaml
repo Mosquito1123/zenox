@@ -1,0 +1,26 @@
+# 软约束：采光与日照偏好
+id: daylight
+version: "1.0"
+enabled_by_default: true
+rules:
+  - id: living_face_light
+    scope: living
+    weight: 0.9
+    description: 客厅主座优先朝向或靠近主采光窗
+    check: primary_seat_near_main_window
+  - id: desk_near_window
+    scope: study
+    weight: 0.85
+    description: 书桌优先靠窗，光源在非惯用手侧为佳
+    check: desk_near_window
+  - id: bedroom_not_only_dark_corner
+    scope: bedroom
+    weight: 0.7
+    description: 床尽量不要完全落在无窗房间的最暗角
+    check: bed_not_in_darkest_corner
+  - id: deep_room_need_lamps
+    scope: any
+    weight: 0.5
+    description: 进深大的房间提示补落地灯/吊灯
+    check: deep_room_lighting_hint
+    params: { depth_m: 4.5 }

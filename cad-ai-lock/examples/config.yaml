@@ -1,0 +1,20 @@
+# 示例配置（也可全部用环境变量）
+provider: mock  # mock | replicate | fal | local
+control_strength: 0.85
+guidance_scale: 7.5
+num_inference_steps: 30
+default_prompt: "现代简约客厅，浅色木地板，沙发与落地灯"
+negative_extra: "模糊,低质量,文字水印"
+# 软布局策略（产品开关）
+policies:
+  common_sense: true
+  daylight: true
+  fengshui: false   # 可选偏好，默认关
+  templates: true
+structure_threshold: 0.35
+policy_threshold: 0.55
+replicate:
+  model_name: jagilley/controlnet-canny
+fal:
+  model: fal-ai/flux/dev/image-to-image
+vision_refine: false

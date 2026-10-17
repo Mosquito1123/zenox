@@ -1,0 +1,99 @@
+{
+  "version": "1.0",
+  "source_path": "examples/sample_floorplan.jpg",
+  "image_width": 640,
+  "image_height": 480,
+  "scale_px_per_m": null,
+  "walls": [
+    {
+      "id": "wall_730ce9a8",
+      "start": {
+        "x": 55.0,
+        "y": 416.0
+      },
+      "end": {
+        "x": 584.0,
+        "y": 416.0
+      },
+      "thickness_px": 8.0,
+      "exterior": false
+    },
+    {
+      "id": "wall_54f4e9c4",
+      "start": {
+        "x": 55.0,
+        "y": 63.0
+      },
+      "end": {
+        "x": 584.0,
+        "y": 63.0
+      },
+      "thickness_px": 8.0,
+      "exterior": false
+    },
+    {
+      "id": "wall_3378e3f8",
+      "start": {
+        "x": 575.0,
+        "y": 55.0
+      },
+      "end": {
+        "x": 575.0,
+        "y": 425.0
+      },
+      "thickness_px": 8.0,
+      "exterior": false
+    },
+    {
+      "id": "wall_897f19ff",
+      "start": {
+        "x": 57.0,
+        "y": 58.0
+      },
+      "end": {
+        "x": 57.0,
+        "y": 421.0
+      },
+      "thickness_px": 8.0,
+      "exterior": false
+    }
+  ],
+  "openings": [
+    {
+      "id": "open_d444fd06",
+      "type": "window",
+      "start": {
+        "x": 323.0,
+        "y": 65.0
+      },
+      "end": {
+        "x": 323.0,
+        "y": 343.0
+      },
+      "wall_id": null,
+      "width_m": null,
+      "swing": null
+    },
+    {
+      "id": "open_c6ef0ede",
+      "type": "door",
+      "start": {
+        "x": 284.0,
+        "y": 25.0
+      },
+      "end": {
+        "x": 59.0,
+        "y": 30.0
+      },
+      "wall_id": null,
+      "width_m": null,
+      "swing": null
+    }
+  ],
+  "rooms": [],
+  "notes": null,
+  "meta": {
+    "extractor": "opencv_hough",
+    "pdf_page": 0
+  }
+}

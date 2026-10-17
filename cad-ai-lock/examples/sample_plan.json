@@ -1,0 +1,33 @@
+{
+  "version": "1.0",
+  "source_path": "examples/sample_floorplan.jpg",
+  "image_width": 640,
+  "image_height": 480,
+  "scale_px_per_m": 40.0,
+  "policies": ["common_sense", "daylight", "layout_templates"],
+  "plan_revision": "1",
+  "camera": {
+    "preset": "living_one_point",
+    "vanishing_point": {"x": 320, "y": 240},
+    "horizon_y": 240,
+    "camera_height_m": 1.5,
+    "wall_height_m": 2.8
+  },
+  "walls": [
+    {"id": "wall_n", "start": {"x": 60, "y": 60}, "end": {"x": 580, "y": 60}, "thickness_px": 8, "exterior": true},
+    {"id": "wall_e", "start": {"x": 580, "y": 60}, "end": {"x": 580, "y": 420}, "thickness_px": 8, "exterior": true},
+    {"id": "wall_s", "start": {"x": 580, "y": 420}, "end": {"x": 60, "y": 420}, "thickness_px": 8, "exterior": true},
+    {"id": "wall_w", "start": {"x": 60, "y": 420}, "end": {"x": 60, "y": 60}, "thickness_px": 8, "exterior": true},
+    {"id": "wall_part", "start": {"x": 320, "y": 60}, "end": {"x": 320, "y": 340}, "thickness_px": 6, "exterior": false}
+  ],
+  "openings": [
+    {"id": "door_1", "type": "door", "start": {"x": 205, "y": 420}, "end": {"x": 275, "y": 420}, "wall_id": "wall_s"},
+    {"id": "win_1", "type": "window", "start": {"x": 380, "y": 60}, "end": {"x": 460, "y": 60}, "wall_id": "wall_n"}
+  ],
+  "rooms": [
+    {"id": "living", "name": "客厅", "polygon": [{"x": 60, "y": 60}, {"x": 320, "y": 60}, {"x": 320, "y": 420}, {"x": 60, "y": 420}]},
+    {"id": "bedroom", "name": "卧室", "polygon": [{"x": 320, "y": 60}, {"x": 580, "y": 60}, {"x": 580, "y": 420}, {"x": 320, "y": 420}]}
+  ],
+  "notes": "示例矩形户型：南门、北窗、中部分隔墙",
+  "meta": {"example": true}
+}

@@ -1,0 +1,32 @@
+# 软约束：室内常识（不改墙门窗）
+id: common_sense
+version: "1.0"
+enabled_by_default: true
+rules:
+  - id: clear_door_swing
+    scope: any
+    weight: 1.0
+    description: 门后与开启扇范围内不放大件家具
+    check: no_furniture_in_door_clearance
+    fix: push_furniture_away_from_doors
+  - id: circulation_width
+    scope: any
+    weight: 0.9
+    description: 主要走道保持可通行净宽
+    check: min_corridor_clearance
+    params: { min_m: 0.7 }
+  - id: bed_against_solid_wall
+    scope: bedroom
+    weight: 0.85
+    description: 床头宜靠实墙，不对门
+    check: bed_head_on_solid_wall
+  - id: sofa_not_block_window
+    scope: living
+    weight: 0.7
+    description: 沙发靠背勿完全封死主采光窗
+    check: sofa_not_blocking_main_window
+  - id: kitchen_stove_not_door_axis
+    scope: kitchen
+    weight: 0.6
+    description: 灶台避免正对门口直冲
+    check: stove_not_aligned_door
