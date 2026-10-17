@@ -117,12 +117,12 @@ src/cad_ai_lock/
 
 密钥只放本地 `.env`（参考 `.env.example`），详见 [SECURITY.md](./SECURITY.md)。`out/` 与 `.env` 均已 gitignore。
 
-更新开源仓库（本机已 `gh auth login`）：
+从 monorepo 分支同步到独立仓库（本机已 `gh auth login`）：
 
 ```bash
-bash scripts/sync-to-github.sh
-# 或直接从 zenox 分支同步：
-# curl -fsSL ... 见 scripts/sync-to-github.sh
+# 先拉最新分支里的脚本，或直接：
+gh repo clone Mosquito1123/zenox /tmp/zenox -- -b cursor/cad-ai-lock-auto-pipeline-74b7 --depth 1
+bash /tmp/zenox/cad-ai-lock/scripts/sync-to-github.sh
 ```
 
 ## License

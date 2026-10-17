@@ -223,7 +223,12 @@ class ReplicateProvider(ImageProvider):
             resp = client.post(url, headers=headers, json=body)
             if resp.status_code == 404:
                 # fallback: versioned model from REPLICATE_CONTROLNET_MODEL
-                version = self.settings.replicate_controlnet_model
+                version = (self.settings.replicate_controlnet_model or "").strip()
+                if not version:
+                    raise RuntimeError(
+                        f"Model {self.model!r} not found; set "
+                        "REPLICATE_CONTROLNET_MODEL=owner/name:version"
+                    )
                 if ":" in version:
                     version = version.split(":", 1)[1]
                 resp = client.post(
