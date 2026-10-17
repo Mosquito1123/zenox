@@ -49,7 +49,7 @@ class StageResult:
 
 @dataclass
 class PipelineReport:
-    version: str = "0.4.2"
+    version: str = "0.4.3"
     mode: str = "generate_then_correct"
     input_path: str = ""
     workdir: str = ""

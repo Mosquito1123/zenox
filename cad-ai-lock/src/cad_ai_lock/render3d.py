@@ -96,14 +96,15 @@ def _camera_eye_target_from_plan(
     view = target - eye
     vn = np.linalg.norm(view) or 1.0
     view = view / vn
-    pull = 0.2 if per_room else 1.2
+    # Per-room cams already sit inside the room box — tiny pull only.
+    # Whole-plan living cam needs a larger pull so the eye is not in a slab.
+    pull = 0.05 if per_room else 1.2
     eye = eye - view * pull
-    # Keep eye inside horizontal envelope with margin
-    xmin, ymin = px_to_world(x0 + 20, y0 + 20)[:2]
-    xmax, ymax = px_to_world(x1 - 20, y1 - 20)[:2]
-    margin = 0.15 if per_room else 0.3
-    eye[0] = float(np.clip(eye[0], min(xmin, xmax) + margin, max(xmin, xmax) - margin))
-    eye[1] = float(np.clip(eye[1], min(ymin, ymax) + margin, max(ymin, ymax) - margin))
+    if not per_room:
+        xmin, ymin = px_to_world(x0 + 20, y0 + 20)[:2]
+        xmax, ymax = px_to_world(x1 - 20, y1 - 20)[:2]
+        eye[0] = float(np.clip(eye[0], min(xmin, xmax) + 0.3, max(xmin, xmax) - 0.3))
+        eye[1] = float(np.clip(eye[1], min(ymin, ymax) + 0.3, max(ymin, ymax) - 0.3))
     eye[2] = cam.camera_height_m
 
     meta = {
@@ -170,13 +171,13 @@ def _rasterize(
     idbuf = np.full((height, width), -1, dtype=np.int32)
     nbuf = np.zeros((height, width, 3), dtype=np.float32)
 
-    # kind colors for segmentation
+    # kind colors for segmentation / beauty (BGR)
     palette = {
-        "wall": (220, 220, 220),
-        "floor": (120, 100, 80),
-        "opening_door": (0, 255, 255),
-        "opening_window": (0, 180, 255),
-        "opening_pass": (180, 180, 255),
+        "wall": (210, 210, 205),
+        "floor": (90, 140, 180),  # warm wood-ish
+        "opening_door": (40, 220, 255),
+        "opening_window": (40, 190, 255),
+        "opening_pass": (200, 180, 255),
         "furniture": (100, 200, 100),
     }
 
@@ -263,11 +264,14 @@ def _rasterize(
     line = cv2.bitwise_or(edges, edges2)
     lineart = cv2.cvtColor(line, cv2.COLOR_GRAY2BGR)
 
-    # beauty: lambert
-    light = np.array([0.3, -0.2, 0.9], dtype=np.float64)
+    # beauty: ambient + lambert on a soft sky backdrop (readable room box)
+    light = np.array([0.35, -0.15, 0.92], dtype=np.float64)
     light = light / np.linalg.norm(light)
-    shade = np.clip((nbuf * light).sum(axis=2), 0.05, 1.0)
+    lambert = np.clip((nbuf * light).sum(axis=2), 0.0, 1.0)
+    shade = 0.42 + 0.58 * lambert  # lift shadows so walls/floor are visible
+    sky = np.array([168, 178, 188], dtype=np.float32)  # BGR soft gray-blue
     beauty = np.zeros((height, width, 3), dtype=np.uint8)
+    beauty[:] = sky.astype(np.uint8)
     base = seg.astype(np.float32)
     for c in range(3):
         ch = base[:, :, c] * shade
@@ -284,6 +288,34 @@ def _rasterize(
     }
 
 
+def _filter_faces_by_bbox_m(
+    V: np.ndarray,
+    F: np.ndarray,
+    face_ids: np.ndarray,
+    bbox_m: tuple[float, float, float, float],
+    *,
+    pad_m: float = 0.55,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Keep faces whose centroid lies inside an expanded XY bbox (meters)."""
+    if len(F) == 0:
+        return F, face_ids
+    x0, y0, x1, y1 = bbox_m
+    x0 -= pad_m
+    y0 -= pad_m
+    x1 += pad_m
+    y1 += pad_m
+    cents = V[F].mean(axis=1)  # (M,3)
+    keep = (
+        (cents[:, 0] >= x0)
+        & (cents[:, 0] <= x1)
+        & (cents[:, 1] >= y0)
+        & (cents[:, 1] <= y1)
+    )
+    if not keep.any():
+        return F, face_ids
+    return F[keep], face_ids[keep]
+
+
 def render_controls_software(
     plan: RoomPlan,
     *,
@@ -292,10 +324,25 @@ def render_controls_software(
     width: int = 720,
     height: int = 1280,
     fov_deg: float = 70.0,
+    clip_bbox_px: tuple[float, float, float, float] | None = None,
 ) -> RenderBundle:
     scene = scene or extrude_room_plan(plan)
     V, F, face_ids, kind_names = scene.merged_arrays()
     eye, target, cam_meta = _camera_eye_target_from_plan(plan, scene, camera)
+    if clip_bbox_px is not None:
+        ox, oy = scene.origin_px
+        ppm = scene.scale_px_per_m
+        x0, y0, x1, y1 = clip_bbox_px
+        bbox_m = (
+            (x0 - ox) / ppm,
+            (y0 - oy) / ppm,
+            (x1 - ox) / ppm,
+            (y1 - oy) / ppm,
+        )
+        F, face_ids = _filter_faces_by_bbox_m(V, F, face_ids, bbox_m)
+        cam_meta = {**cam_meta, "clip_bbox_px": {
+            "x0": x0, "y0": y0, "x1": x1, "y1": y1
+        }}
     R = _look_at(eye, target)
     maps = _rasterize(
         V,
@@ -322,6 +369,7 @@ def render_controls_software(
             "fov_deg": fov_deg,
             "kinds": kind_names,
             "parts": len(scene.parts),
+            "faces_rendered": int(len(F)),
         },
     )
 

@@ -315,6 +315,158 @@ def extrude_room_plan(
     )
 
 
+def extrude_room_shell(
+    plan: RoomPlan,
+    room: dict[str, Any],
+    *,
+    wall_height_m: float | None = None,
+    base_scene: Scene3D | None = None,
+) -> Scene3D:
+    """Clean per-room shell (floor + wall quads + nearby openings) for readable tour frames.
+
+    Unlike the full plan extrusion (noisy overlapping wall slabs), this builds one
+    open room box from the room polygon so a camera inside sees floor + walls.
+    """
+    ppm = (base_scene.scale_px_per_m if base_scene else None) or _ppm(plan)
+    origin = (base_scene.origin_px if base_scene else None) or (
+        plan.bounding_box()[0],
+        plan.bounding_box()[1],
+    )
+    h = wall_height_m or (
+        (base_scene.wall_height_m if base_scene else None)
+        or (plan.camera.wall_height_m if plan.camera else 2.8)
+    )
+    poly = list(room.get("polygon") or [])
+    if len(poly) < 3:
+        x0 = min(p.get("x", 0) for p in poly) if poly else 0
+        y0 = min(p.get("y", 0) for p in poly) if poly else 0
+        x1 = max(p.get("x", 0) for p in poly) if poly else 100
+        y1 = max(p.get("y", 0) for p in poly) if poly else 100
+        c = room.get("center") or {}
+        if c:
+            x0, y0 = c.get("x", 50) - 40, c.get("y", 50) - 40
+            x1, y1 = c.get("x", 50) + 40, c.get("y", 50) + 40
+        poly = [
+            {"x": x0, "y": y0},
+            {"x": x1, "y": y0},
+            {"x": x1, "y": y1},
+            {"x": x0, "y": y1},
+        ]
+
+    pts_m = [_px_to_m(float(p["x"]), float(p["y"]), origin, ppm) for p in poly]
+    parts: list[MeshPart] = []
+
+    # Floor: fan triangulation around centroid
+    cx = sum(p[0] for p in pts_m) / len(pts_m)
+    cy = sum(p[1] for p in pts_m) / len(pts_m)
+    floor_v = [(cx, cy, 0.0)] + [(p[0], p[1], 0.0) for p in pts_m]
+    # close ring
+    floor_v.append((pts_m[0][0], pts_m[0][1], 0.0))
+    Vf = np.array(floor_v, dtype=np.float32)
+    Ff = []
+    for i in range(1, len(pts_m) + 1):
+        Ff.append([0, i, i + 1 if i < len(pts_m) else 1])
+    # fix last: use explicit close vertex index
+    Ff = []
+    n = len(pts_m)
+    for i in range(n):
+        i1 = i + 1
+        i2 = (i + 1) % n + 1
+        Ff.append([0, i1, i2])
+    parts.append(
+        MeshPart(
+            name=f"floor_{room.get('id')}",
+            kind="floor",
+            vertices=Vf[: n + 1],
+            faces=np.array(Ff, dtype=np.int32),
+            color=(0.78, 0.70, 0.58),
+        )
+    )
+
+    # Ceiling (helps frame the room)
+    ceil_v = [(cx, cy, h)] + [(p[0], p[1], h) for p in pts_m]
+    Vc = np.array(ceil_v, dtype=np.float32)
+    Fc = []
+    for i in range(n):
+        i1 = i + 1
+        i2 = (i + 1) % n + 1
+        # flip winding so underside faces camera from below
+        Fc.append([0, i2, i1])
+    parts.append(
+        MeshPart(
+            name=f"ceil_{room.get('id')}",
+            kind="wall",
+            vertices=Vc,
+            faces=np.array(Fc, dtype=np.int32),
+            color=(0.95, 0.95, 0.93),
+        )
+    )
+
+    # Wall quads along polygon edges (thin inward faces — readable from inside)
+    for i in range(n):
+        ax, ay = pts_m[i]
+        bx, by = pts_m[(i + 1) % n]
+        V, F = _quad(ax, ay, bx, by, 0.0, h)
+        # also add reverse face so wall is visible from either side
+        F2 = np.vstack([F, F[:, ::-1]])
+        parts.append(
+            MeshPart(
+                name=f"shell_wall_{i}",
+                kind="wall",
+                vertices=V,
+                faces=F2.astype(np.int32),
+                color=(0.88, 0.88, 0.86),
+            )
+        )
+
+    # Nearby openings as colored quads
+    xs = [float(p["x"]) for p in poly]
+    ys = [float(p["y"]) for p in poly]
+    x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+    for i, op in enumerate(plan.openings):
+        mx = (op.start.x + op.end.x) / 2
+        my = (op.start.y + op.end.y) / 2
+        if not (x0 - 40 <= mx <= x1 + 40 and y0 - 40 <= my <= y1 + 40):
+            continue
+        ax, ay = _px_to_m(op.start.x, op.start.y, origin, ppm)
+        bx, by = _px_to_m(op.end.x, op.end.y, origin, ppm)
+        if op.type == OpeningType.DOOR:
+            z0, z1 = 0.0, min(h * 0.75, 2.1)
+            color = (0.15, 0.75, 0.95)
+            kind = "opening_door"
+        elif op.type == OpeningType.WINDOW:
+            z0, z1 = h * 0.35, h * 0.85
+            color = (0.95, 0.75, 0.2)
+            kind = "opening_window"
+        else:
+            z0, z1 = 0.0, h * 0.9
+            color = (0.7, 0.7, 1.0)
+            kind = "opening_pass"
+        V, F = _quad(ax, ay, bx, by, z0, z1)
+        F2 = np.vstack([F, F[:, ::-1]])
+        parts.append(
+            MeshPart(
+                name=f"shell_open_{op.id or i}",
+                kind=kind,
+                vertices=V,
+                faces=F2.astype(np.int32),
+                color=color,
+            )
+        )
+
+    return Scene3D(
+        parts=parts,
+        scale_px_per_m=ppm,
+        origin_px=origin,
+        wall_height_m=h,
+        meta={
+            "shell_of": room.get("id"),
+            "room_name": room.get("name"),
+            "verts": sum(len(p.vertices) for p in parts),
+        },
+    )
+
+
 def export_plan_gltf(
     plan: RoomPlan,
     out_path: str | Path,
