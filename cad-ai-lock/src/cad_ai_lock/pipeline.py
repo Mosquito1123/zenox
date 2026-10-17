@@ -49,7 +49,7 @@ class StageResult:
 
 @dataclass
 class PipelineReport:
-    version: str = "0.4.1"
+    version: str = "0.4.2"
     mode: str = "generate_then_correct"
     input_path: str = ""
     workdir: str = ""
@@ -466,6 +466,45 @@ def run_commercial_pipeline(
             )
         )
         corrections.append("vr_from_3d_mesh")
+
+        # Multi-room tour: per-room cams → parallel render → hotspots
+        def do_tour():
+            from cad_ai_lock.tour import render_tour_parallel
+
+            return render_tour_parallel(
+                plan,
+                workdir / "tour",
+                width=720,
+                height=1280,
+            )
+
+        try:
+            tour, ms_tour = _timed("tour_parallel", do_tour)
+            report.artifacts["tour_json"] = str(workdir / "tour" / "tour.json")
+            report.artifacts["tour_html"] = str(workdir / "tour" / "tour.html")
+            contact = workdir / "tour" / "tour_contact.png"
+            if contact.exists():
+                report.artifacts["tour_contact"] = str(contact)
+            report.stages.append(
+                StageResult(
+                    "tour_parallel",
+                    True,
+                    ms_tour,
+                    {
+                        "rooms": tour.meta.get("rooms_rendered"),
+                        "hotspots": len(tour.hotspots),
+                        "workers": tour.meta.get("workers"),
+                        "start_room": tour.start_room,
+                        "errors": tour.meta.get("errors") or [],
+                    },
+                )
+            )
+            corrections.append("tour_parallel_rooms")
+        except Exception as tour_exc:  # noqa: BLE001
+            report.stages.append(
+                StageResult("tour_parallel", False, 0, {"error": str(tour_exc)})
+            )
+            corrections.append("tour_parallel_failed")
     except Exception as exc:  # noqa: BLE001
         report.stages.append(
             StageResult("extrude_render3d", False, 0, {"error": str(exc)})
@@ -607,6 +646,24 @@ def run_commercial_pipeline(
             )
             (workdir / "vr_prompt.txt").write_text(
                 living_vr_prompt(contract, prompt), encoding="utf-8"
+            )
+            from cad_ai_lock.tour import render_tour_parallel
+
+            tour = render_tour_parallel(
+                plan, workdir / "tour", width=720, height=1280
+            )
+            report.artifacts["tour_json"] = str(workdir / "tour" / "tour.json")
+            report.artifacts["tour_html"] = str(workdir / "tour" / "tour.html")
+            report.stages.append(
+                StageResult(
+                    f"correct_tour_{cround}",
+                    True,
+                    0,
+                    {
+                        "rooms": tour.meta.get("rooms_rendered"),
+                        "hotspots": len(tour.hotspots),
+                    },
+                )
             )
         except Exception as exc:  # noqa: BLE001
             report.stages.append(

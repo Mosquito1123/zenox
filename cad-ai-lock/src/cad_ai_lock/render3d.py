@@ -74,9 +74,15 @@ def _camera_eye_target_from_plan(
     x0, y0, x1, y1 = plan.bounding_box()
     eye_px = ((x0 + x1) / 2, y0 + (y1 - y0) * 0.42)
     tgt_px = ((x0 + x1) / 2, y1 - 8)
+    per_room = str(cam.preset or "").startswith("room_")
     if "eye=(" in notes:
         try:
             eye_px = tuple(map(float, notes.split("eye=(")[1].split(")")[0].split(",")))  # type: ignore
+        except Exception:
+            pass
+    if "target=(" in notes:
+        try:
+            tgt_px = tuple(map(float, notes.split("target=(")[1].split(")")[0].split(",")))  # type: ignore
         except Exception:
             pass
     if cam.vanishing_point is not None:
@@ -85,16 +91,19 @@ def _camera_eye_target_from_plan(
     eye = px_to_world(eye_px[0], eye_px[1], cam.camera_height_m)
     target = px_to_world(tgt_px[0], tgt_px[1], cam.camera_height_m * 0.9)
 
-    # Pull eye backward along view so we are not embedded in a wall slab
+    # Pull eye backward along view so we are not embedded in a wall slab.
+    # Per-room tour cams already sit inside the room — use a short pull-back.
     view = target - eye
     vn = np.linalg.norm(view) or 1.0
     view = view / vn
-    eye = eye - view * 1.2
+    pull = 0.2 if per_room else 1.2
+    eye = eye - view * pull
     # Keep eye inside horizontal envelope with margin
     xmin, ymin = px_to_world(x0 + 20, y0 + 20)[:2]
     xmax, ymax = px_to_world(x1 - 20, y1 - 20)[:2]
-    eye[0] = float(np.clip(eye[0], min(xmin, xmax) + 0.3, max(xmin, xmax) - 0.3))
-    eye[1] = float(np.clip(eye[1], min(ymin, ymax) + 0.3, max(ymin, ymax) - 0.3))
+    margin = 0.15 if per_room else 0.3
+    eye[0] = float(np.clip(eye[0], min(xmin, xmax) + margin, max(xmin, xmax) - margin))
+    eye[1] = float(np.clip(eye[1], min(ymin, ymax) + margin, max(ymin, ymax) - margin))
     eye[2] = cam.camera_height_m
 
     meta = {

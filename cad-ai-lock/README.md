@@ -4,10 +4,11 @@
 CAD/PDF/JPG
   → Extract + Assess/Repair
   → **先出草稿** layout / controls / t2i / glTF / VR
+  → **分房间漫游** 每房间相机位姿 → 任务队列并行渲 → 拼导航/热点
   → fidelity 对照原户型打分
   → **不中断**：weak 则 hillclimb 修正轮（repair→重建控制→重生成）⟲
   → 交付 grade：locked | improved | draft（均有可下载产物）
-  → run_report.json + iter_0_draft / iter_N/
+  → run_report.json + tour/ + iter_0_draft / iter_N/
 ```
 
 体验原则：**始终先生成，再逐步修正**；不对齐原户型时标 `draft/improved`，而不是直接失败空白。
@@ -16,6 +17,9 @@ CAD/PDF/JPG
 python -m cad_ai_lock.cli extrude --plan plan.json -o out/scene.glb
 python -m cad_ai_lock.cli render3d --plan plan.json -o out/ctrl3d
 # 有 Blender 时：  --blender
+# 分房间并行 VR 漫游（相机位姿 → 队列并行渲 → 热点导航）
+python -m cad_ai_lock.cli tour --plan plan.json -o out/tour
+# 打开 out/tour/tour.html
 ```
 
 **商用主路径不接受手改 `plan.json`。** `--plan-override` 仅供运维兜底。
@@ -89,6 +93,7 @@ src/cad_ai_lock/
   perspective.py  ViewContract + 2D 透视线（调试/提示锁）
   extrude.py      RoomPlan→米制 mesh→glTF
   render3d.py     mesh→depth/normal/seg/lineart（software；可选 Blender）
+  tour.py         每房间相机 → ThreadPool 并行渲 → hotspots + tour.html
   ocr_utils.py    EasyOCR（可选）
   pipeline.py     商用闭环编排
   layout.py       软布局
@@ -103,6 +108,7 @@ src/cad_ai_lock/
 - OCR 为可选依赖；无 EasyOCR 时仍可跑 CV 提取 + 纹理房间分类，比例尺可 `--scale` 传入。
 - mock 只验证闭环与控制图锁定；上线请接真实 ControlNet（Replicate/FAL/local）。
 - VR/透视静帧由 `CameraSpec` + 生成端一点透视 prompt 产出，不是全景 360。
+- 多房间漫游：`tour` 为每间房独立相机并行渲 beauty/depth，再按门邻接拼热点导航；非并发全景 VR。
 - 风水包默认关闭，不覆盖消防/通行常识。
 
 ## License

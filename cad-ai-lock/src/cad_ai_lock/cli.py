@@ -1,4 +1,4 @@
-"""CLI: extract | layout | t2i | i2i | validate | pipeline | make-demo | policies."""
+"""CLI: extract | layout | t2i | i2i | validate | extrude | render3d | tour | pipeline."""
 
 from __future__ import annotations
 
@@ -291,6 +291,40 @@ def render3d_cmd(
     console.print(f"[green]3D controls[/green] gltf={glb} renderer={bundle.meta.get('renderer')}")
     for k, v in paths.items():
         console.print(f"  {k} → {v}")
+
+
+@app.command("tour")
+def tour_cmd(
+    plan_path: Path = typer.Option(..., "--plan", help="RoomPlan JSON"),
+    out_dir: Path = typer.Option(Path("out/tour"), "--out", "-o"),
+    workers: int = typer.Option(0, "--workers", help="并行线程数；0=自动"),
+    width: int = typer.Option(720, "--width"),
+    height: int = typer.Option(1280, "--height"),
+    min_area: int = typer.Option(1200, "--min-area", help="忽略过小房间的面积阈值（px²）"),
+) -> None:
+    """每房间相机位姿 → 任务队列并行渲 → 再拼导航/热点（tour.html）。"""
+    from cad_ai_lock.geometry import RoomPlan
+    from cad_ai_lock.tour import render_tour_parallel
+
+    plan = RoomPlan.from_file(str(plan_path))
+    tour = render_tour_parallel(
+        plan,
+        out_dir,
+        max_workers=workers or None,
+        width=width,
+        height=height,
+        min_area_px=min_area,
+    )
+    console.print(
+        f"[green]tour[/green] rooms={tour.meta.get('rooms_rendered')} "
+        f"hotspots={len(tour.hotspots)} workers={tour.meta.get('workers')} "
+        f"start={tour.start_room}"
+    )
+    console.print(f"  tour.json → {out_dir / 'tour.json'}")
+    console.print(f"  tour.html → {out_dir / 'tour.html'}")
+    if tour.meta.get("errors"):
+        for err in tour.meta["errors"]:
+            console.print(f"  [yellow]warn[/yellow] {err}")
 
 
 @app.command("assess")
