@@ -387,9 +387,9 @@ def extract_room_plan(
 ) -> tuple[RoomPlan, np.ndarray, np.ndarray]:
     """Main entry: path → (RoomPlan, BGR image, edge/structure map).
 
-    When ``auto_correct`` is True (commercial default), runs assess→repair
-    until topology health passes or repair budget is exhausted. Never requires
-    hand-edited plan.json for the happy path.
+    When ``auto_correct`` is True (default), runs assess→repair until topology
+    health passes or repair budget is exhausted. Never requires hand-edited
+    plan.json for the happy path.
     """
     path = Path(path)
     image = load_image(path, pdf_page=pdf_page)
@@ -397,7 +397,8 @@ def extract_room_plan(
     walls, openings, edges = detect_walls_and_openings(image)
 
     plan = RoomPlan(
-        source_path=str(path),
+        # Basename only — avoid leaking absolute local paths into shared artifacts
+        source_path=path.name,
         image_width=w,
         image_height=h,
         scale_px_per_m=scale_px_per_m,

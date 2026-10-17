@@ -113,6 +113,18 @@ src/cad_ai_lock/
 - 多房间漫游：`tour` 为每间房独立相机并行渲 beauty/depth，再按门邻接拼热点导航；非并发全景 VR。
 - 风水包默认关闭，不覆盖消防/通行常识。
 
+## 安全
+
+密钥只放本地 `.env`（参考 `.env.example`），详见 [SECURITY.md](./SECURITY.md)。`out/` 与 `.env` 均已 gitignore。
+
+更新开源仓库（本机已 `gh auth login`）：
+
+```bash
+bash scripts/sync-to-github.sh
+# 或直接从 zenox 分支同步：
+# curl -fsSL ... 见 scripts/sync-to-github.sh
+```
+
 ## License
 
 MIT

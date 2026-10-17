@@ -1,12 +1,40 @@
+# Python
 .venv/
 __pycache__/
 *.py[cod]
 *.egg-info/
 dist/
 build/
-.env
-out/
-*.png
-!examples/*.jpg
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
+*.egg
+
+# Secrets / local env (never commit)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+credentials*
+secrets*
+.secrets/
+**/id_rsa*
+**/id_ed25519*
+
+# Runtime outputs (may contain absolute local paths)
+out/
+runs/
+tmp/
+*.log
+
+# Media dumps (keep example jpg only)
+*.png
+!examples/*.jpg
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp

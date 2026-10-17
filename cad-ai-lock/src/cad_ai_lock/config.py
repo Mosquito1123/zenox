@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     # Public ControlNet canny on Replicate (jagilley/controlnet-canny)
     # Prefer REPLICATE_MODEL_NAME (owner/name). Optional version hash for /v1/predictions.
     replicate_controlnet_model: str = Field(
-        default="jagilley/controlnet-canny",
+        default="",
         alias="REPLICATE_CONTROLNET_MODEL",
     )
     # Prefer versionless model name; generate.py normalizes
