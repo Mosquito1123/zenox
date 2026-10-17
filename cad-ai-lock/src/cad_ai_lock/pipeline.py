@@ -52,7 +52,7 @@ class StageResult:
 
 @dataclass
 class PipelineReport:
-    version: str = "0.3.1"
+    version: str = "0.4.0"
     mode: str = "commercial_auto"
     input_path: str = ""
     workdir: str = ""
@@ -359,7 +359,7 @@ def run_commercial_pipeline(
         except Exception as exc:  # noqa: BLE001
             report.stages.append(StageResult("i2i", False, 0, {"error": str(exc)}))
 
-    # ----- 7) VR perspective hard-lock stage -----
+    # ----- 7) True 3D: extrude glTF + render control maps -----
     try:
         from cad_ai_lock.perspective import (
             assess_vr_against_contract,
@@ -367,10 +367,41 @@ def run_commercial_pipeline(
             place_living_camera,
             render_perspective_control,
         )
+        from cad_ai_lock.render3d import build_3d_controls
 
         cam = layout.camera or plan.camera or place_living_camera(plan)
         plan.camera = cam
         layout.camera = cam
+
+        def do_3d():
+            return build_3d_controls(
+                plan,
+                workdir / "ctrl3d",
+                camera=cam,
+                prefer_blender=False,
+                width=720,
+                height=1280,
+            )
+
+        (paths3d, bundle3d, glb), ms = _timed("extrude_render3d", do_3d)
+        report.artifacts["gltf"] = str(glb)
+        report.artifacts.update({f"ctrl3d_{k}": v for k, v in paths3d.items()})
+        report.stages.append(
+            StageResult(
+                "extrude_render3d",
+                True,
+                ms,
+                {
+                    "renderer": bundle3d.meta.get("renderer"),
+                    "parts": bundle3d.meta.get("parts"),
+                    "gltf": str(glb),
+                },
+            )
+        )
+        corrections.append("extrude_gltf")
+        corrections.append("render3d_controls")
+
+        # 2D perspective wireframe still kept as debug overlay / prompt lock
         persp, contract = render_perspective_control(plan, cam, layout=layout)
         persp_path = workdir / "control" / "control_perspective.png"
         persp_path.parent.mkdir(parents=True, exist_ok=True)
@@ -380,10 +411,9 @@ def run_commercial_pipeline(
             json.dumps(contract.to_dict(), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-        # Mock VR still = perspective wireframe as locked scaffold (providers
-        # must condition on this; free-form VR without it is a pipeline fail).
+        # VR scaffold = true-3D beauty (geometry-locked), not free-form gen
         vr_path = workdir / "vr_living.png"
-        cv2.imwrite(str(vr_path), persp)
+        cv2.imwrite(str(vr_path), bundle3d.beauty)
         vr_prompt = living_vr_prompt(contract, prompt)
         (workdir / "vr_prompt.txt").write_text(vr_prompt, encoding="utf-8")
         vr_assess = assess_vr_against_contract(contract)
@@ -401,16 +431,17 @@ def run_commercial_pipeline(
                     "far_wall": contract.far_wall,
                     "left_openings": contract.left_openings,
                     "right_openings": contract.right_openings,
+                    "source": "ctrl3d_beauty_from_gltf",
                     "prompt_lock_zh": contract.prompt_lock_zh,
                 },
             )
         )
-        corrections.append("vr_perspective_lock")
+        corrections.append("vr_from_3d_mesh")
     except Exception as exc:  # noqa: BLE001
         report.stages.append(
-            StageResult("vr_perspective_lock", False, 0, {"error": str(exc)})
+            StageResult("extrude_render3d", False, 0, {"error": str(exc)})
         )
-        corrections.append("vr_perspective_lock_failed")
+        corrections.append("extrude_render3d_failed")
 
     report.validations = validations
     report.corrections = list(dict.fromkeys(corrections))

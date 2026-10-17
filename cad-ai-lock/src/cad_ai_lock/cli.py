@@ -248,6 +248,51 @@ def validate_cmd(
         raise typer.Exit(code=2)
 
 
+@app.command("extrude")
+def extrude_cmd(
+    plan_path: Path = typer.Option(..., "--plan", help="RoomPlan JSON"),
+    out: Path = typer.Option(Path("out/scene.glb"), "--out", "-o", help="glTF/GLB 输出"),
+    height: float = typer.Option(2.8, "--height", help="墙高（米）"),
+) -> None:
+    """RoomPlan 挤出为真三维 glTF（商用几何内核）。"""
+    from cad_ai_lock.extrude import export_plan_gltf
+    from cad_ai_lock.geometry import RoomPlan
+
+    plan = RoomPlan.from_file(str(plan_path))
+    path, scene = export_plan_gltf(plan, out, wall_height_m=height)
+    console.print(
+        f"[green]glTF[/green] → {path}  parts={len(scene.parts)} "
+        f"scale={scene.scale_px_per_m:.2f}px/m h={scene.wall_height_m}m"
+    )
+
+
+@app.command("render3d")
+def render3d_cmd(
+    plan_path: Path = typer.Option(..., "--plan", help="RoomPlan JSON"),
+    out_dir: Path = typer.Option(Path("out/ctrl3d"), "--out", "-o"),
+    gltf: Optional[Path] = typer.Option(None, "--gltf", help="已有 glTF；空则先挤出"),
+    blender: bool = typer.Option(False, "--blender/--software", help="优先 Blender 无头渲染"),
+    width: int = typer.Option(720, "--width"),
+    height: int = typer.Option(1280, "--height"),
+) -> None:
+    """从真三维渲 depth/normal/seg/lineart 控制图（VR 硬锁输入）。"""
+    from cad_ai_lock.geometry import RoomPlan
+    from cad_ai_lock.render3d import build_3d_controls
+
+    plan = RoomPlan.from_file(str(plan_path))
+    paths, bundle, glb = build_3d_controls(
+        plan,
+        out_dir,
+        gltf_path=gltf,
+        prefer_blender=blender,
+        width=width,
+        height=height,
+    )
+    console.print(f"[green]3D controls[/green] gltf={glb} renderer={bundle.meta.get('renderer')}")
+    for k, v in paths.items():
+        console.print(f"  {k} → {v}")
+
+
 @app.command("assess")
 def assess_cmd(
     plan_path: Path = typer.Argument(..., help="RoomPlan JSON"),

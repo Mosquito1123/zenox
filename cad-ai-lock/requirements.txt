@@ -9,7 +9,9 @@ python-dotenv>=1.0
 PyYAML>=6.0
 typer>=0.12
 rich>=13.0
+trimesh>=4.0
 # Optional:
 # easyocr>=1.7          # dimension / Chinese room-label OCR
 # replicate>=0.25
 # fal-client>=0.4
+# Blender on PATH enables --blender true-3D Cycles renders

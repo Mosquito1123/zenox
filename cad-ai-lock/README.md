@@ -3,20 +3,23 @@
 ```
 CAD/PDF/JPG
   → Extract (ink/Hough/LSD + OCR)
-  → Assess 拓扑健康度
-  → Repair 自动修正（正交/合并/网格/房间/比例尺/门窗）  ⟲ 直到通过或耗尽预算
-  → Layout 软策略（常识/采光/可选风水）
-  → Control 多控制图
-  → Generate t2i/i2i（ControlNet 硬锁）
-  → VR perspective lock（plan→一点透视控制图 + ViewContract 门洞合同）
-  → Validate 结构硬分
-       ↓ fail
-     加强 control strength 重试 ⟲
-  → run_report.json（全程审计，禁止静默手改）
+  → Assess / Repair ⟲
+  → Layout 软策略
+  → **Extrude → glTF**（真三维几何内核，米制）
+  → **Render3D** depth / normal / seg / lineart / beauty（从 mesh 投影，非 AI 猜）
+  → Control 多控制图 + ViewContract
+  → Generate：AI **只做材质/光感**，结构条件于 3D 控制图
+  → Validate 失败则加强 strength / 回退重渲 3D ⟲
+  → run_report.json
 ```
 
-**VR 不能只靠文生图自由发挥。** 必须条件于 `control_perspective.png`，并满足 `view_contract.json`
-（如 `far=balcony, L=[door], R=[]`）。左右门洞数量错误视为流水线失败，应重试/修正。
+**为什么 Unity/CAD 准、纯 AI 不准：** 前者有真 mesh；后者只有像素。本流水线 v0.4 补上 glTF 几何核，VR 脚手架来自 `ctrl3d_beauty`，不是自由文生图。
+
+```bash
+python -m cad_ai_lock.cli extrude --plan plan.json -o out/scene.glb
+python -m cad_ai_lock.cli render3d --plan plan.json -o out/ctrl3d
+# 有 Blender 时：  --blender
+```
 
 **商用主路径不接受手改 `plan.json`。** `--plan-override` 仅供运维兜底。
 
@@ -86,11 +89,13 @@ src/cad_ai_lock/
   extract.py      hybrid ink + Hough + LSD + OCR
   assess.py       拓扑健康度
   repair.py       自动修正动作
-  perspective.py  plan→一点透视 VR 硬锁 + ViewContract
+  perspective.py  ViewContract + 2D 透视线（调试/提示锁）
+  extrude.py      RoomPlan→米制 mesh→glTF
+  render3d.py     mesh→depth/normal/seg/lineart（software；可选 Blender）
   ocr_utils.py    EasyOCR（可选）
   pipeline.py     商用闭环编排
   layout.py       软布局
-  control.py      多控制图（含 perspective）
+  control.py      多控制图
   generate.py     mock / replicate / fal / local
   validate.py     结构硬校验
   cli.py

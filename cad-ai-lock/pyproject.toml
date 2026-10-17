@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cad-ai-lock"
-version = "0.3.1"
-description = "Commercial auto CAD→renovation pipeline with assess/repair loops"
+version = "0.4.0"
+description = "Commercial CAD→glTF→3D controls→AI style pipeline with repair loops"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -22,6 +22,7 @@ dependencies = [
   "PyYAML>=6.0",
   "typer>=0.12",
   "rich>=13.0",
+  "trimesh>=4.0",
 ]
 
 [project.optional-dependencies]
