@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cad-ai-lock"
 version = "0.4.3"
-description = "Commercial CAD→glTF→3D controls→AI style pipeline with repair loops"
+description = "CAD→glTF→3D controls→AI style pipeline with repair loops"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }

@@ -66,10 +66,10 @@ CAD / PDF / JPG
 |------|------|
 | **几何硬锁** | 墙/门/窗坐标进 `RoomPlan` 后不可被生成端改写；只允许风格与家具变化 |
 | **先出草稿** | 不对齐也不空白失败；始终交付可下载产物，用 `quality_grade` 标质量 |
-| **自动修正** | 商用主路径禁止手改 `plan.json`；`--plan-override` 仅运维兜底 |
+| **自动修正** | 主路径禁止手改 `plan.json`；`--plan-override` 仅运维兜底 |
 | **真三维内核** | VR/控制图来自 mesh（glTF），不是纯 2D 线稿幻想 |
 | **分房间并行** | 漫游 = 每间独立相机并行渲，再拼热点；不是单相机串行、也不是全景 360 |
-| **软生成 ≠ 锁户型** | `mock` / 无 ControlNet 的 GenerateImage 只能验闭环，不能当商用交付 |
+| **软生成 ≠ 锁户型** | `mock` / 无 ControlNet 的 GenerateImage 只能验闭环，不能当正式交付 |
 
 ---
 
@@ -150,7 +150,7 @@ RoomPlan.rooms
 
 | `quality_grade` | 含义 |
 |-----------------|------|
-| `locked` | 对照原户型通过，可商用交付 |
+| `locked` | 对照原户型通过，可正式交付 |
 | `improved` | 有提升但仍弱，可下载继续修 |
 | `draft` | 草稿已出，需继续 hillclimb / 加强提取 |
 
@@ -169,7 +169,7 @@ out/run/
 
 ---
 
-## 一键商用路径
+## 一键流水线
 
 ```bash
 cd cad-ai-lock
@@ -278,7 +278,7 @@ python -m cad_ai_lock.cli validate out/t2i.png --plan plan.json --layout layout.
 | `tour.py` | 相机 → 并行渲 → 热点 HTML |
 | `generate.py` | mock / replicate / fal / local |
 | `validate.py` / `fidelity.py` | 结构校验 / 对照原图 |
-| `pipeline.py` | 商用编排（先草稿再 hillclimb） |
+| `pipeline.py` | 流水线编排（先草稿再 hillclimb） |
 | `cli.py` | Typer 入口 |
 
 ---

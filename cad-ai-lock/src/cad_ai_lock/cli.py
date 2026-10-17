@@ -254,7 +254,7 @@ def extrude_cmd(
     out: Path = typer.Option(Path("out/scene.glb"), "--out", "-o", help="glTF/GLB 输出"),
     height: float = typer.Option(2.8, "--height", help="墙高（米）"),
 ) -> None:
-    """RoomPlan 挤出为真三维 glTF（商用几何内核）。"""
+    """RoomPlan 挤出为真三维 glTF（几何内核）。"""
     from cad_ai_lock.extrude import export_plan_gltf
     from cad_ai_lock.geometry import RoomPlan
 
@@ -393,7 +393,7 @@ def pipeline_cmd(
     plan_override: Optional[Path] = typer.Option(
         None,
         "--plan-override",
-        help="运维覆盖：跳过自动提取（非商用主路径）",
+        help="运维覆盖：跳过自动提取（非主路径）",
     ),
 ) -> None:
     """先出草稿再逐步修正：extract → 生成 → fidelity → hillclimb 修正轮 → 始终交付产物。"""
