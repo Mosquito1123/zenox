@@ -353,13 +353,16 @@ def pipeline_cmd(
     ocr: bool = typer.Option(True, "--ocr/--no-ocr"),
     vision: bool = typer.Option(False, "--vision/--no-vision"),
     retries: int = typer.Option(3, "--retries", help="生成失败自动加强 control 重试次数"),
+    correct_rounds: int = typer.Option(
+        3, "--correct-rounds", help="出图后逐步修正轮数（不中断，先出草稿）"
+    ),
     plan_override: Optional[Path] = typer.Option(
         None,
         "--plan-override",
         help="运维覆盖：跳过自动提取（非商用主路径）",
     ),
 ) -> None:
-    """商用一键闭环：extract → assess/repair → layout → controls → generate → validate（失败自动修正/重试）。"""
+    """先出草稿再逐步修正：extract → 生成 → fidelity → hillclimb 修正轮 → 始终交付产物。"""
     from cad_ai_lock.pipeline import run_commercial_pipeline
 
     report = run_commercial_pipeline(
@@ -374,13 +377,23 @@ def pipeline_cmd(
         use_ocr=ocr,
         use_vision=vision,
         max_generate_retries=retries,
+        max_correct_rounds=correct_rounds,
         plan_override=plan_override,
     )
     console.print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
-    if report.success:
-        console.print(f"[green]pipeline OK[/green] → {workdir}/run_report.json")
+    grade = getattr(report, "quality_grade", "draft")
+    if report.success and getattr(report, "locked", False):
+        console.print(
+            f"[green]pipeline LOCKED[/green] grade={grade} → {workdir}/run_report.json"
+        )
+    elif report.success:
+        console.print(
+            f"[cyan]pipeline DRAFT delivered[/cyan] grade={grade} "
+            f"rounds={getattr(report, 'correction_rounds', 0)} → {workdir}/run_report.json"
+        )
+        console.print(f"  {report.message}")
     else:
-        console.print(f"[yellow]pipeline issues[/yellow] → {workdir}/run_report.json")
+        console.print(f"[red]pipeline hard failure[/red] → {workdir}/run_report.json")
         raise typer.Exit(code=2)
 
 

@@ -2,18 +2,15 @@
 
 ```
 CAD/PDF/JPG
-  → Extract (ink/Hough/LSD + OCR)
-  → Assess / Repair ⟲
-  → Layout 软策略
-  → **Extrude → glTF**（真三维几何内核，米制）
-  → **Render3D** depth / normal / seg / lineart / beauty（从 mesh 投影，非 AI 猜）
-  → Control 多控制图 + ViewContract
-  → Generate：AI **只做材质/光感**，结构条件于 3D 控制图
-  → Validate 失败则加强 strength / 回退重渲 3D ⟲
-  → run_report.json
+  → Extract + Assess/Repair
+  → **先出草稿** layout / controls / t2i / glTF / VR
+  → fidelity 对照原户型打分
+  → **不中断**：weak 则 hillclimb 修正轮（repair→重建控制→重生成）⟲
+  → 交付 grade：locked | improved | draft（均有可下载产物）
+  → run_report.json + iter_0_draft / iter_N/
 ```
 
-**为什么 Unity/CAD 准、纯 AI 不准：** 前者有真 mesh；后者只有像素。本流水线 v0.4 补上 glTF 几何核，VR 脚手架来自 `ctrl3d_beauty`，不是自由文生图。
+体验原则：**始终先生成，再逐步修正**；不对齐原户型时标 `draft/improved`，而不是直接失败空白。
 
 ```bash
 python -m cad_ai_lock.cli extrude --plan plan.json -o out/scene.glb

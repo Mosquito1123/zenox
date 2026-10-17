@@ -1,13 +1,10 @@
-"""Commercial closed-loop pipeline with automatic correction.
+"""Commercial closed-loop pipeline: generate first, then hillclimb corrections.
 
-Stages:
-  1. extract (+ OCR)
-  2. assess plan → repair until pass / budget
-  3. layout (+ soft assess → rebuild)
-  4. controls
-  5. generate (t2i / optional i2i / optional VR camera still via mock/provider)
-  6. validate alignment → if fail: bump control strength & regenerate
-  7. emit run_report.json (full audit trail — no silent hand edits)
+UX contract:
+  - Always emit draft artifacts (plan / controls / t2i / glTF / VR scaffold).
+  - If fidelity vs source floorplan is weak, do NOT abort — run correction
+    rounds: repair → rebuild layout/controls → regenerate → re-score.
+  - Final grade: locked | improved | draft (always downloadable).
 
 Hand-edited plan.json is NEVER part of the happy path. Operator override is
 an explicit CLI flag (`--plan-override`) for support tools only.
@@ -52,17 +49,21 @@ class StageResult:
 
 @dataclass
 class PipelineReport:
-    version: str = "0.4.0"
-    mode: str = "commercial_auto"
+    version: str = "0.4.1"
+    mode: str = "generate_then_correct"
     input_path: str = ""
     workdir: str = ""
     success: bool = False
+    locked: bool = False  # True only when fidelity vs source passed
+    quality_grade: str = "draft"  # locked | improved | draft
+    correction_rounds: int = 0
     stages: list[StageResult] = field(default_factory=list)
     plan_health: dict[str, Any] = field(default_factory=dict)
     layout_health: dict[str, Any] = field(default_factory=dict)
     validations: dict[str, Any] = field(default_factory=dict)
     artifacts: dict[str, str] = field(default_factory=dict)
     corrections: list[str] = field(default_factory=list)
+    iteration_log: list[dict[str, Any]] = field(default_factory=list)
     message: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -72,12 +73,16 @@ class PipelineReport:
             "input_path": self.input_path,
             "workdir": self.workdir,
             "success": self.success,
+            "locked": self.locked,
+            "quality_grade": self.quality_grade,
+            "correction_rounds": self.correction_rounds,
             "stages": [s.to_dict() for s in self.stages],
             "plan_health": self.plan_health,
             "layout_health": self.layout_health,
             "validations": self.validations,
             "artifacts": self.artifacts,
             "corrections": self.corrections,
+            "iteration_log": self.iteration_log,
             "message": self.message,
         }
 
@@ -109,13 +114,14 @@ def run_commercial_pipeline(
     use_vision: bool = False,
     max_plan_repair_rounds: int = 3,
     max_generate_retries: int = 3,
+    max_correct_rounds: int = 3,
     structure_threshold: float = 0.35,
     plan_health_threshold: float = 0.55,
     strength: float | None = None,
     also_i2i: bool = True,
     plan_override: str | Path | None = None,
 ) -> PipelineReport:
-    """End-to-end auto pipeline with correction loops."""
+    """Generate draft first, then hillclimb corrections — never soft-abort UX."""
     import os
 
     from cad_ai_lock.config import get_settings
@@ -218,8 +224,8 @@ def run_commercial_pipeline(
         )
     )
 
-    # CRITICAL: plan must still explain the SOURCE floorplan (not just internal topology)
-    from cad_ai_lock.fidelity import assess_plan_vs_source
+    # Score plan vs source — weak fidelity triggers hillclimb LATER, never aborts draft
+    from cad_ai_lock.fidelity import assess_image_vs_source, assess_plan_vs_source
 
     fidelity = assess_plan_vs_source(plan, image, expect_min_rooms=5)
     report.stages.append(
@@ -231,26 +237,8 @@ def run_commercial_pipeline(
         )
     )
     if not fidelity.passed:
-        corrections.append("fidelity_plan_vs_source_FAILED")
-        # Force another repair/infer pass then re-check once
-        from cad_ai_lock.repair import auto_repair, infer_rooms
-
-        plan = infer_rooms(plan, image)
-        plan, health, applied = auto_repair(
-            plan, health, image_bgr=image, ocr_items=plan.meta.get("ocr_items") or []
-        )
-        corrections.extend(applied)
-        fidelity = assess_plan_vs_source(plan, image, expect_min_rooms=5)
-        report.stages.append(
-            StageResult(
-                "fidelity_plan_vs_source_retry",
-                fidelity.passed,
-                0,
-                fidelity.to_dict(),
-            )
-        )
-        if not fidelity.passed:
-            corrections.append("ABORT_structure_not_locked_to_floorplan")
+        corrections.append("fidelity_weak_will_hillclimb")
+    fidelity0_score = float(fidelity.score)
 
     plan_path = workdir / "plan.json"
     plan.save(str(plan_path))
@@ -260,6 +248,9 @@ def run_commercial_pipeline(
     report.artifacts["fidelity_plan"] = str(workdir / "fidelity_plan.json")
     (workdir / "fidelity_plan.json").write_text(
         json.dumps(fidelity.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    report.iteration_log.append(
+        {"iter": 0, "phase": "draft_plan", "fidelity": fidelity.to_dict()}
     )
 
     # ----- 3) layout -----
@@ -481,10 +472,9 @@ def run_commercial_pipeline(
         )
         corrections.append("extrude_render3d_failed")
 
-    # Fidelity of mock/provider outputs vs SOURCE floorplan (top-down)
-    from cad_ai_lock.fidelity import assess_image_vs_source
-
-    if best_t2i is not None and best_t2i.exists():
+    # Score draft outputs vs source (informational — draft already saved)
+    img_fid = None
+    if best_t2i is not None and Path(workdir / "t2i.png").exists():
         gen_img = cv2.imread(str(workdir / "t2i.png"))
         if gen_img is not None:
             img_fid = assess_image_vs_source(gen_img, image, label="t2i")
@@ -493,36 +483,202 @@ def run_commercial_pipeline(
                 StageResult("fidelity_t2i_vs_source", img_fid.passed, 0, img_fid.to_dict())
             )
             if not img_fid.passed:
-                corrections.append("t2i_deviates_from_floorplan")
+                corrections.append("t2i_deviates_will_hillclimb")
+
+    # Snapshot draft iteration for progressive review
+    draft_dir = workdir / "iter_0_draft"
+    draft_dir.mkdir(exist_ok=True)
+    for name in ("plan.json", "layout.json", "t2i.png", "vr_living.png"):
+        src = workdir / name
+        if not src.exists():
+            continue
+        if name.endswith(".png"):
+            img = cv2.imread(str(src))
+            if img is not None:
+                cv2.imwrite(str(draft_dir / name), img)
+        else:
+            (draft_dir / name).write_bytes(src.read_bytes())
+    report.artifacts["iter_0_draft"] = str(draft_dir)
+    report.iteration_log.append(
+        {
+            "iter": 0,
+            "phase": "draft_outputs",
+            "fidelity_plan": fidelity.to_dict(),
+            "fidelity_t2i": img_fid.to_dict() if img_fid else None,
+        }
+    )
+
+    # ----- Hillclimb: generate already done → stepwise correct -----
+    best_fidelity_score = float(fidelity.score)
+    from cad_ai_lock.repair import auto_repair, infer_rooms, estimate_scale_from_ocr
+
+    for cround in range(1, max_correct_rounds + 1):
+        if fidelity.passed and (img_fid is None or img_fid.passed):
+            break
+        corrections.append(f"correct_round_{cround}")
+        iter_dir = workdir / f"iter_{cround}"
+        iter_dir.mkdir(exist_ok=True)
+
+        # Stronger plan repair each round
+        plan = infer_rooms(plan, image)
+        plan, health, applied = auto_repair(
+            plan,
+            assess_plan(plan, threshold=plan_health_threshold),
+            image_bgr=image,
+            ocr_items=plan.meta.get("ocr_items") or [],
+        )
+        corrections.extend(applied)
+        if plan.scale_px_per_m is None:
+            plan = estimate_scale_from_ocr(plan, plan.meta.get("ocr_items") or [])
+        fidelity = assess_plan_vs_source(plan, image, expect_min_rooms=5)
+        plan.save(str(workdir / "plan.json"))
+        plan.save(str(iter_dir / "plan.json"))
+
+        layout = build_layout(
+            plan, daylight=daylight, fengshui=fengshui, common_sense=common_sense
+        )
+        layout.save(str(workdir / "layout.json"))
+        layout.save(str(iter_dir / "layout.json"))
+        write_control_bundle(
+            plan, workdir / "control", source_image=image, layout=layout
+        )
+
+        # Regenerate t2i with higher strength
+        cur_strength = min(0.95, base_strength + 0.05 * cround)
+        try:
+            t2i_path = run_t2i(
+                plan,
+                prompt,
+                workdir / "t2i.png",
+                provider=prov,
+                seed=42 + cround,
+                strength=cur_strength,
+                layout=layout,
+            )
+            # also keep per-iter copy
+            img = cv2.imread(str(t2i_path))
+            if img is not None:
+                cv2.imwrite(str(iter_dir / "t2i.png"), img)
+            v = validate_file(
+                t2i_path,
+                plan,
+                threshold=structure_threshold,
+                overlay_out=iter_dir / "t2i_overlay.png",
+                layout=layout,
+            )
+            validations[f"t2i_correct_{cround}"] = v.to_dict()
+            best_v = v
+            best_t2i = Path(t2i_path)
+            img_fid = assess_image_vs_source(img, image, label=f"t2i_r{cround}")
+            validations[f"t2i_vs_source_r{cround}"] = img_fid.to_dict()
+        except Exception as exc:  # noqa: BLE001
+            report.stages.append(
+                StageResult(f"correct_t2i_{cround}", False, 0, {"error": str(exc)})
+            )
+
+        # Refresh 3D / VR scaffold from corrected plan
+        try:
+            from cad_ai_lock.perspective import (
+                living_vr_prompt,
+                place_living_camera,
+                render_perspective_control,
+            )
+            from cad_ai_lock.render3d import build_3d_controls
+
+            cam = layout.camera or place_living_camera(plan)
+            plan.camera = cam
+            paths3d, bundle3d, glb = build_3d_controls(
+                plan,
+                workdir / "ctrl3d",
+                camera=cam,
+                prefer_blender=False,
+                width=720,
+                height=1280,
+            )
+            report.artifacts["gltf"] = str(glb)
+            report.artifacts.update({f"ctrl3d_{k}": v for k, v in paths3d.items()})
+            cv2.imwrite(str(workdir / "vr_living.png"), bundle3d.beauty)
+            cv2.imwrite(str(iter_dir / "vr_living.png"), bundle3d.beauty)
+            persp, contract = render_perspective_control(plan, cam, layout=layout)
+            cv2.imwrite(str(workdir / "control" / "control_perspective.png"), persp)
+            (workdir / "view_contract.json").write_text(
+                json.dumps(contract.to_dict(), ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            (workdir / "vr_prompt.txt").write_text(
+                living_vr_prompt(contract, prompt), encoding="utf-8"
+            )
+        except Exception as exc:  # noqa: BLE001
+            report.stages.append(
+                StageResult(f"correct_3d_{cround}", False, 0, {"error": str(exc)})
+            )
+
+        report.correction_rounds = cround
+        report.stages.append(
+            StageResult(
+                f"correct_round_{cround}",
+                fidelity.passed,
+                0,
+                {
+                    "fidelity": fidelity.to_dict(),
+                    "t2i_vs_source": img_fid.to_dict() if img_fid else None,
+                    "applied": applied,
+                },
+            )
+        )
+        report.iteration_log.append(
+            {
+                "iter": cround,
+                "phase": "correct",
+                "fidelity_plan": fidelity.to_dict(),
+                "fidelity_t2i": img_fid.to_dict() if img_fid else None,
+                "strength": cur_strength,
+            }
+        )
+        best_fidelity_score = max(best_fidelity_score, float(fidelity.score))
+        (workdir / "fidelity_plan.json").write_text(
+            json.dumps(fidelity.to_dict(), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        if fidelity.passed and (img_fid is None or img_fid.passed):
+            corrections.append(f"correct_round_{cround}_locked")
+            break
 
     report.validations = validations
     report.corrections = list(dict.fromkeys(corrections))
+    report.plan_health = health.to_dict() if hasattr(health, "to_dict") else report.plan_health
+
+    fidelity_ok = bool(fidelity.passed)
     t2i_ok = bool(best_v and best_v.passed)
-    plan_ok = bool(health.passed or health.score >= plan_health_threshold * 0.85)
-    vr_ok = any(s.name == "vr_perspective_lock" and s.ok for s in report.stages)
-    fidelity_ok = any(
-        s.name.startswith("fidelity_plan_vs_source") and s.ok for s in report.stages
-    )
-    # HARD RULE: without source fidelity, run is NOT commercially successful —
-    # even if mock t2i "passes" edge overlap against its own (wrong) plan.
-    report.success = bool(plan_ok and fidelity_ok and vr_ok and t2i_ok)
-    if provider == "mock" and report.success:
-        report.message = "OK — structure locked to source floorplan + 3D controls"
-    elif not fidelity_ok:
+    vr_ok = (workdir / "vr_living.png").exists()
+    has_draft = (workdir / "t2i.png").exists() and (workdir / "plan.json").exists()
+
+    # Always succeed at delivering artifacts; grade quality separately
+    report.success = has_draft
+    report.locked = fidelity_ok and t2i_ok
+    if report.locked:
+        report.quality_grade = "locked"
         report.message = (
-            "FAILED — RoomPlan does not match source floorplan; "
-            "downstream reno/VR must NOT be trusted. Fix extract/repair first."
+            f"OK — locked to source after {report.correction_rounds} correction round(s)"
         )
-        report.success = False
+    elif best_fidelity_score > fidelity0_score + 0.02 or report.correction_rounds > 0:
+        report.quality_grade = "improved"
+        report.message = (
+            f"DRAFT+IMPROVED — delivered outputs; fidelity "
+            f"{fidelity0_score:.2f}→{best_fidelity_score:.2f} after "
+            f"{report.correction_rounds} round(s); continue hillclimb or tighten extract"
+        )
     else:
+        report.quality_grade = "draft"
         report.message = (
-            "COMPLETED_WITH_ISSUES — see plan_health / fidelity / validations"
+            "DRAFT — outputs generated; fidelity still weak vs source. "
+            "Artifacts saved under iter_*; next rounds will keep correcting."
         )
-    # Explicit warning for soft image backends (Cursor GenerateImage etc.)
+
     report.artifacts["warning"] = (
-        "Soft reference image generators are NOT ControlNet. "
-        "Only outputs conditioned on ctrl3d_* / canny with measurable "
-        "fidelity_vs_source may be shipped as structure-locked."
+        "quality_grade=locked means structure-safe to ship. "
+        "draft/improved are still downloadable for review. "
+        "Soft GenerateImage ≠ ControlNet."
     )
     report.artifacts["run_report"] = str(workdir / "run_report.json")
     report.save(workdir / "run_report.json")
