@@ -218,11 +218,49 @@ def run_commercial_pipeline(
         )
     )
 
+    # CRITICAL: plan must still explain the SOURCE floorplan (not just internal topology)
+    from cad_ai_lock.fidelity import assess_plan_vs_source
+
+    fidelity = assess_plan_vs_source(plan, image, expect_min_rooms=5)
+    report.stages.append(
+        StageResult(
+            "fidelity_plan_vs_source",
+            fidelity.passed,
+            0,
+            fidelity.to_dict(),
+        )
+    )
+    if not fidelity.passed:
+        corrections.append("fidelity_plan_vs_source_FAILED")
+        # Force another repair/infer pass then re-check once
+        from cad_ai_lock.repair import auto_repair, infer_rooms
+
+        plan = infer_rooms(plan, image)
+        plan, health, applied = auto_repair(
+            plan, health, image_bgr=image, ocr_items=plan.meta.get("ocr_items") or []
+        )
+        corrections.extend(applied)
+        fidelity = assess_plan_vs_source(plan, image, expect_min_rooms=5)
+        report.stages.append(
+            StageResult(
+                "fidelity_plan_vs_source_retry",
+                fidelity.passed,
+                0,
+                fidelity.to_dict(),
+            )
+        )
+        if not fidelity.passed:
+            corrections.append("ABORT_structure_not_locked_to_floorplan")
+
     plan_path = workdir / "plan.json"
     plan.save(str(plan_path))
     report.artifacts["plan"] = str(plan_path)
     cv2.imwrite(str(workdir / "source.jpg"), image)
     report.artifacts["source"] = str(workdir / "source.jpg")
+    report.artifacts["fidelity_plan"] = str(workdir / "fidelity_plan.json")
+    (workdir / "fidelity_plan.json").write_text(
+        json.dumps(fidelity.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
     # ----- 3) layout -----
     def do_layout():
@@ -443,19 +481,48 @@ def run_commercial_pipeline(
         )
         corrections.append("extrude_render3d_failed")
 
+    # Fidelity of mock/provider outputs vs SOURCE floorplan (top-down)
+    from cad_ai_lock.fidelity import assess_image_vs_source
+
+    if best_t2i is not None and best_t2i.exists():
+        gen_img = cv2.imread(str(workdir / "t2i.png"))
+        if gen_img is not None:
+            img_fid = assess_image_vs_source(gen_img, image, label="t2i")
+            validations["t2i_vs_source"] = img_fid.to_dict()
+            report.stages.append(
+                StageResult("fidelity_t2i_vs_source", img_fid.passed, 0, img_fid.to_dict())
+            )
+            if not img_fid.passed:
+                corrections.append("t2i_deviates_from_floorplan")
+
     report.validations = validations
     report.corrections = list(dict.fromkeys(corrections))
     t2i_ok = bool(best_v and best_v.passed)
     plan_ok = bool(health.passed or health.score >= plan_health_threshold * 0.85)
     vr_ok = any(s.name == "vr_perspective_lock" and s.ok for s in report.stages)
-    report.success = plan_ok and (t2i_ok or provider == "mock") and vr_ok
-    # mock provider composites controls — treat as structural success if plan_ok
-    if provider == "mock" and plan_ok and best_t2i is not None and vr_ok:
-        report.success = True
-    report.message = (
-        "OK — commercial auto pipeline completed (incl. VR perspective lock)"
-        if report.success
-        else "COMPLETED_WITH_ISSUES — see plan_health / validations / VR contract"
+    fidelity_ok = any(
+        s.name.startswith("fidelity_plan_vs_source") and s.ok for s in report.stages
+    )
+    # HARD RULE: without source fidelity, run is NOT commercially successful —
+    # even if mock t2i "passes" edge overlap against its own (wrong) plan.
+    report.success = bool(plan_ok and fidelity_ok and vr_ok and t2i_ok)
+    if provider == "mock" and report.success:
+        report.message = "OK — structure locked to source floorplan + 3D controls"
+    elif not fidelity_ok:
+        report.message = (
+            "FAILED — RoomPlan does not match source floorplan; "
+            "downstream reno/VR must NOT be trusted. Fix extract/repair first."
+        )
+        report.success = False
+    else:
+        report.message = (
+            "COMPLETED_WITH_ISSUES — see plan_health / fidelity / validations"
+        )
+    # Explicit warning for soft image backends (Cursor GenerateImage etc.)
+    report.artifacts["warning"] = (
+        "Soft reference image generators are NOT ControlNet. "
+        "Only outputs conditioned on ctrl3d_* / canny with measurable "
+        "fidelity_vs_source may be shipped as structure-locked."
     )
     report.artifacts["run_report"] = str(workdir / "run_report.json")
     report.save(workdir / "run_report.json")
