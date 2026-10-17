@@ -1,5 +1,7 @@
 # CAD AI Lock — 商用自动化装修流水线
 
+> 完整开源工作流说明见 **[WORKFLOW.md](./WORKFLOW.md)**（阶段、数据契约、Tour、Hillclimb、复现命令）。
+
 ```
 CAD/PDF/JPG
   → Extract + Assess/Repair
