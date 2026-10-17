@@ -8,11 +8,15 @@ CAD/PDF/JPG
   → Layout 软策略（常识/采光/可选风水）
   → Control 多控制图
   → Generate t2i/i2i（ControlNet 硬锁）
+  → VR perspective lock（plan→一点透视控制图 + ViewContract 门洞合同）
   → Validate 结构硬分
        ↓ fail
      加强 control strength 重试 ⟲
   → run_report.json（全程审计，禁止静默手改）
 ```
+
+**VR 不能只靠文生图自由发挥。** 必须条件于 `control_perspective.png`，并满足 `view_contract.json`
+（如 `far=balcony, L=[door], R=[]`）。左右门洞数量错误视为流水线失败，应重试/修正。
 
 **商用主路径不接受手改 `plan.json`。** `--plan-override` 仅供运维兜底。
 
@@ -82,10 +86,11 @@ src/cad_ai_lock/
   extract.py      hybrid ink + Hough + LSD + OCR
   assess.py       拓扑健康度
   repair.py       自动修正动作
+  perspective.py  plan→一点透视 VR 硬锁 + ViewContract
   ocr_utils.py    EasyOCR（可选）
   pipeline.py     商用闭环编排
   layout.py       软布局
-  control.py      多控制图
+  control.py      多控制图（含 perspective）
   generate.py     mock / replicate / fal / local
   validate.py     结构硬校验
   cli.py

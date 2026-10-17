@@ -52,7 +52,7 @@ class StageResult:
 
 @dataclass
 class PipelineReport:
-    version: str = "0.3.0"
+    version: str = "0.3.1"
     mode: str = "commercial_auto"
     input_path: str = ""
     workdir: str = ""
@@ -359,18 +359,72 @@ def run_commercial_pipeline(
         except Exception as exc:  # noqa: BLE001
             report.stages.append(StageResult("i2i", False, 0, {"error": str(exc)}))
 
+    # ----- 7) VR perspective hard-lock stage -----
+    try:
+        from cad_ai_lock.perspective import (
+            assess_vr_against_contract,
+            living_vr_prompt,
+            place_living_camera,
+            render_perspective_control,
+        )
+
+        cam = layout.camera or plan.camera or place_living_camera(plan)
+        plan.camera = cam
+        layout.camera = cam
+        persp, contract = render_perspective_control(plan, cam, layout=layout)
+        persp_path = workdir / "control" / "control_perspective.png"
+        persp_path.parent.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(persp_path), persp)
+        contract_path = workdir / "view_contract.json"
+        contract_path.write_text(
+            json.dumps(contract.to_dict(), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        # Mock VR still = perspective wireframe as locked scaffold (providers
+        # must condition on this; free-form VR without it is a pipeline fail).
+        vr_path = workdir / "vr_living.png"
+        cv2.imwrite(str(vr_path), persp)
+        vr_prompt = living_vr_prompt(contract, prompt)
+        (workdir / "vr_prompt.txt").write_text(vr_prompt, encoding="utf-8")
+        vr_assess = assess_vr_against_contract(contract)
+        validations["vr_contract"] = vr_assess
+        report.artifacts["perspective"] = str(persp_path)
+        report.artifacts["view_contract"] = str(contract_path)
+        report.artifacts["vr_living"] = str(vr_path)
+        report.artifacts["vr_prompt"] = str(workdir / "vr_prompt.txt")
+        report.stages.append(
+            StageResult(
+                "vr_perspective_lock",
+                True,
+                0,
+                {
+                    "far_wall": contract.far_wall,
+                    "left_openings": contract.left_openings,
+                    "right_openings": contract.right_openings,
+                    "prompt_lock_zh": contract.prompt_lock_zh,
+                },
+            )
+        )
+        corrections.append("vr_perspective_lock")
+    except Exception as exc:  # noqa: BLE001
+        report.stages.append(
+            StageResult("vr_perspective_lock", False, 0, {"error": str(exc)})
+        )
+        corrections.append("vr_perspective_lock_failed")
+
     report.validations = validations
     report.corrections = list(dict.fromkeys(corrections))
     t2i_ok = bool(best_v and best_v.passed)
     plan_ok = bool(health.passed or health.score >= plan_health_threshold * 0.85)
-    report.success = plan_ok and (t2i_ok or provider == "mock")
+    vr_ok = any(s.name == "vr_perspective_lock" and s.ok for s in report.stages)
+    report.success = plan_ok and (t2i_ok or provider == "mock") and vr_ok
     # mock provider composites controls — treat as structural success if plan_ok
-    if provider == "mock" and plan_ok and best_t2i is not None:
+    if provider == "mock" and plan_ok and best_t2i is not None and vr_ok:
         report.success = True
     report.message = (
-        "OK — commercial auto pipeline completed"
+        "OK — commercial auto pipeline completed (incl. VR perspective lock)"
         if report.success
-        else "COMPLETED_WITH_ISSUES — see plan_health / validations"
+        else "COMPLETED_WITH_ISSUES — see plan_health / validations / VR contract"
     )
     report.artifacts["run_report"] = str(workdir / "run_report.json")
     report.save(workdir / "run_report.json")

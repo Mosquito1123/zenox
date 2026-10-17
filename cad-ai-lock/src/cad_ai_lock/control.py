@@ -182,7 +182,9 @@ def write_control_bundle(
     source_image: np.ndarray | None = None,
     layout: Any | None = None,
 ) -> dict[str, str]:
-    """Write canny/structure/depth/mask/semantic/furniture controls."""
+    """Write canny/structure/depth/mask/semantic/furniture/perspective controls."""
+    import json
+
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -213,5 +215,28 @@ def write_control_bundle(
         p = str(out_dir / "control_source_canny.png")
         cv2.imwrite(p, src_canny)
         paths["source_canny"] = p
+
+    # VR hard-lock: plan→one-point perspective wireframe + ViewContract
+    try:
+        from cad_ai_lock.perspective import place_living_camera, render_perspective_control
+
+        cam = None
+        if layout is not None and getattr(layout, "camera", None) is not None:
+            cam = layout.camera
+        elif plan.camera is not None:
+            cam = plan.camera
+        else:
+            cam = place_living_camera(plan)
+        persp, contract = render_perspective_control(plan, cam, layout=layout)
+        paths["perspective"] = str(out_dir / "control_perspective.png")
+        cv2.imwrite(paths["perspective"], persp)
+        contract_path = out_dir / "view_contract.json"
+        contract_path.write_text(
+            json.dumps(contract.to_dict(), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        paths["view_contract"] = str(contract_path)
+    except Exception as exc:  # noqa: BLE001 — controls must not break pipeline
+        paths["perspective_error"] = str(exc)
 
     return paths

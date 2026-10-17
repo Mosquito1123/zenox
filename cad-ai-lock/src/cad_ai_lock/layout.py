@@ -295,15 +295,10 @@ def build_prompt_hints(items: list[FurnitureItem], scorecard: dict[str, Any]) ->
 
 
 def default_camera(plan: RoomPlan) -> CameraSpec:
-    x0, y0, x1, y1 = plan.bounding_box()
-    return CameraSpec(
-        preset="living_one_point",
-        vanishing_point=Point2D(x=(x0 + x1) / 2, y=(y0 + y1) / 2),
-        horizon_y=(y0 + y1) / 2,
-        camera_height_m=1.5,
-        wall_height_m=2.8,
-        notes="俯视平面上的示意相机；透视渲染时再映射到效果图像素",
-    )
+    """Living → primary balcony/window one-point camera (VR hard-lock pose)."""
+    from cad_ai_lock.perspective import place_living_camera
+
+    return place_living_camera(plan)
 
 
 def build_layout(

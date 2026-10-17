@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cad-ai-lock"
-version = "0.3.0"
+version = "0.3.1"
 description = "Commercial auto CAD→renovation pipeline with assess/repair loops"
 readme = "README.md"
 requires-python = ">=3.10"
